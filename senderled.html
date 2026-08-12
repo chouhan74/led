@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Li-Fi Mobile Sender</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #222; color: #fff;}
+        button { padding: 15px 30px; font-size: 18px; margin-top: 20px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 5px;}
+        input { padding: 10px; font-size: 16px; width: 80%; max-width: 300px; margin-top: 10px;}
+    </style>
+</head>
+<body>
+    <h2>Mobile Li-Fi Sender</h2>
+    <p>Apna message type karein aur Send dabayein.</p>
+    <input type="text" id="message" value="HI" />
+    <br>
+    <button onclick="startTransmission()">Send via Flashlight</button>
+    <p id="status">Status: Waiting...</p>
+
+    <script>
+        let track = null;
+
+        // Text ko Binary mein convert karne ka function
+        function textToBinary(text) {
+            return text.split('').map(char => {
+                return char.charCodeAt(0).toString(2).padStart(8, '0');
+            }).join('');
+        }
+
+        async function startTransmission() {
+            const message = document.getElementById("message").value;
+            const syncHeader = "10101011"; // Same header as before
+            const binaryData = syncHeader + textToBinary(message);
+            const baudRate = 2; // 2 bits per second for camera sync
+            const delay = (1.0 / baudRate) * 1000; // in milliseconds
+
+            document.getElementById("status").innerText = "Status: Initializing Camera...";
+
+            try {
+                // Request back camera with torch support
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" }
+                });
+                track = stream.getVideoTracks()[0];
+                const capabilities = track.getCapabilities();
+
+                if (!capabilities.torch) {
+                    alert("Aapke device/browser mein flashlight control support nahi karta.");
+                    return;
+                }
+
+                document.getElementById("status").innerText = `Sending: ${message} (Length: ${binaryData.length} bits)`;
+                
+                // 3 second wait
+                await new Promise(resolve => setTimeout(resolve, 3000));
+
+                for (let i = 0; i < binaryData.length; i++) {
+                    const bit = binaryData[i];
+                    if (bit === '1') {
+                        await track.applyConstraints({ advanced: [{ torch: true }] });
+                    } else {
+                        await track.applyConstraints({ advanced: [{ torch: false }] });
+                    }
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+
+                // Turn off at the end
+                await track.applyConstraints({ advanced: [{ torch: false }] });
+                document.getElementById("status").innerText = "Status: Transmission Complete!";
+                track.stop(); // Release camera
+
+            } catch (error) {
+                console.error(error);
+                alert("Camera permission denied ya error aayi.");
+            }
+        }
+    </script>
+</body>
+</html>
