@@ -3,71 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Color Data Sender</title>
+    <title>PRO QR Streaming Sender</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: #111; color: white; text-align: center; }
-        #controlPanel { position: absolute; top: 20px; width: 100%; z-index: 10; }
-        input { padding: 10px; font-size: 16px; width: 60%; max-width: 300px; border-radius: 5px; border: none; }
-        button { padding: 10px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; background: #00d2ff; font-weight: bold; border: none; border-radius: 5px; }
-        #colorScreen { width: 100vw; height: 100vh; background-color: black; position: absolute; top: 0; left: 0; z-index: 1; }
-        #status { margin-top: 15px; font-size: 1.2em; font-weight: bold; text-shadow: 1px 1px 2px black;}
+        body { font-family: 'Segoe UI', sans-serif; background-color: #111; color: white; text-align: center; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: auto; background: #222; padding: 20px; border-radius: 10px; box-shadow: 0px 4px 15px rgba(0,255,255,0.2); }
+        input[type="text"], input[type="file"] { width: 90%; padding: 10px; margin: 10px 0; border-radius: 5px; border: none; }
+        button { padding: 12px 25px; font-size: 16px; cursor: pointer; background: #00d2ff; font-weight: bold; border: none; border-radius: 5px; color: black; }
+        #qr-container { display: flex; justify-content: center; margin-top: 20px; background: white; padding: 20px; border-radius: 10px; width: fit-content; margin-left: auto; margin-right: auto; }
+        #status { margin-top: 15px; color: #00ff00; font-size: 1.2em; }
     </style>
 </head>
 <body>
-    <div id="colorScreen"></div>
-    
-    <div id="controlPanel">
-        <h2>🎨 Color Data Sender</h2>
-        <input type="text" id="message" value="HI" />
-        <br>
-        <button onclick="startTransmission()" id="sendBtn">Send via Screen</button>
-        <p id="status">Status: Standby</p>
+    <div class="container">
+        <h2>⚡ PRO QR Stream Sender</h2>
+        <p>Text likhein ya koi choti file (Image/PDF) select karein.</p>
+        
+        <input type="text" id="textInput" placeholder="Message type karein..." />
+        <br><b>YA</b><br>
+        <input type="file" id="fileInput" />
+        
+        <br><br>
+        <button onclick="startStreaming()">Start QR Stream ⚡</button>
+
+        <h3 id="status">Status: Standby</h3>
+        <h4 id="chunk-info"></h4>
+        
+        <div id="qr-container"></div>
     </div>
 
     <script>
-        function textToBinary(text) {
-            return text.split('').map(char => char.charCodeAt(0).toString(2).padStart(8, '0')).join('');
-        }
+        let qrCode = new QRCode(document.getElementById("qr-container"), {
+            width: 300,
+            height: 300,
+            correctLevel: QRCode.CorrectLevel.L // Low error correction for maximum data capacity
+        });
 
-        async function startTransmission() {
-            const btn = document.getElementById("sendBtn");
-            const statusLabel = document.getElementById("status");
-            const colorScreen = document.getElementById("colorScreen");
-            btn.disabled = true;
+        let streamingInterval;
+        const CHUNK_SIZE = 200; // Ek QR mein 200 characters
 
-            const message = document.getElementById("message").value;
-            const binaryData = textToBinary(message);
+        async function startStreaming() {
+            clearInterval(streamingInterval);
+            const fileInput = document.getElementById("fileInput");
+            const textInput = document.getElementById("textInput");
             
-            // Speed: 2 symbols per second = 4 bits per second (Safe speed for testing)
-            const delayMs = 500; 
+            let filename = "message.txt";
+            let fileData = "";
 
-            // Color Map: 00=Red, 01=Green, 10=Blue, 11=Yellow
-            const colors = {
-                '00': 'rgb(255, 0, 0)',
-                '01': 'rgb(0, 255, 0)',
-                '10': 'rgb(0, 0, 255)',
-                '11': 'rgb(255, 255, 0)'
-            };
-
-            statusLabel.innerText = "Syncing... (Magenta)";
-            
-            // SYNC SIGNAL: Show Magenta for 3 seconds to lock receiver
-            colorScreen.style.backgroundColor = 'rgb(255, 0, 255)'; 
-            await new Promise(resolve => setTimeout(resolve, 3000));
-
-            statusLabel.innerText = `TRANSMITTING DATA...`;
-
-            // Data Transmission Loop (Reading 2 bits at a time)
-            for (let i = 0; i < binaryData.length; i += 2) {
-                const chunk = binaryData.substring(i, i + 2);
-                colorScreen.style.backgroundColor = colors[chunk];
-                await new Promise(resolve => setTimeout(resolve, delayMs));
+            if (fileInput.files.length > 0) {
+                // Agar file select ki hai
+                const file = fileInput.files[0];
+                filename = file.name;
+                fileData = await readFileAsBase64(file);
+            } else if (textInput.value.trim() !== "") {
+                // Agar text likha hai
+                filename = "secret_message.txt";
+                // Text ko direct bhej sakte hain, par safety ke liye Data URL bana rahe hain
+                fileData = "data:text/plain;base64," + btoa(unescape(encodeURIComponent(textInput.value)));
+            } else {
+                alert("Please enter text or select a file!");
+                return;
             }
 
-            // End Transmission
-            colorScreen.style.backgroundColor = 'black';
-            statusLabel.innerText = "✅ Transmission Complete!";
-            btn.disabled = false;
+            // Data ko Chunks mein todna
+            const chunks = [];
+            for (let i = 0; i < fileData.length; i += CHUNK_SIZE) {
+                chunks.push(fileData.substring(i, i + CHUNK_SIZE));
+            }
+
+            const totalChunks = chunks.length;
+            document.getElementById("status").innerText = `Total Chunks created: ${totalChunks}`;
+            
+            let currentIndex = 0;
+
+            // QR Streaming Loop (Carousel)
+            streamingInterval = setInterval(() => {
+                // Header Format: [Filename]|[Total_Chunks]|[Current_Index]|[Data]
+                const payload = `${filename}|${totalChunks}|${currentIndex}|${chunks[currentIndex]}`;
+                
+                qrCode.clear();
+                qrCode.makeCode(payload);
+                
+                document.getElementById("chunk-info").innerText = `Flashing Chunk: ${currentIndex + 1} / ${totalChunks}`;
+                
+                currentIndex++;
+                if (currentIndex >= totalChunks) {
+                    currentIndex = 0; // Loop wapas zero se shuru (Receiver miss na kare isliye)
+                }
+            }, 150); // Speed: 150ms per QR (approx 7 FPS)
+        }
+
+        // File ko Base64 (Data URL) mein badalne ka function
+        function readFileAsBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
         }
     </script>
 </body>
