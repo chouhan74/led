@@ -3,25 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Li-Fi Mobile Sender</title>
+    <title>Li-Fi PRO Sender</title>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #222; color: #fff;}
-        button { padding: 15px 30px; font-size: 18px; margin-top: 20px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 5px;}
-        input { padding: 10px; font-size: 16px; width: 80%; max-width: 300px; margin-top: 10px;}
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin-top: 50px; background-color: #111; color: #fff;}
+        button { padding: 15px 30px; font-size: 18px; margin-top: 20px; cursor: pointer; background: #00d2ff; color: #000; font-weight: bold; border: none; border-radius: 8px;}
+        button:active { background: #0096c7; }
+        input { padding: 12px; font-size: 16px; width: 80%; max-width: 300px; margin-top: 10px; border-radius: 5px; border: none;}
+        #status { margin-top: 30px; font-size: 1.2em; color: #00ff00; }
     </style>
 </head>
 <body>
-    <h2>Mobile Li-Fi Sender</h2>
-    <p>Apna message type karein aur Send dabayein.</p>
+    <h2>⚡ PRO Mobile Li-Fi Sender</h2>
+    <p>Message type karein (Max speed transmission)</p>
     <input type="text" id="message" value="HI" />
     <br>
-    <button onclick="startTransmission()">Send via Flashlight</button>
-    <p id="status">Status: Waiting...</p>
+    <button onclick="startTransmission()" id="sendBtn">Send via Flashlight ⚡</button>
+    <p id="status">Status: Standby</p>
 
     <script>
         let track = null;
 
-        // Text ko Binary mein convert karne ka function
         function textToBinary(text) {
             return text.split('').map(char => {
                 return char.charCodeAt(0).toString(2).padStart(8, '0');
@@ -29,50 +30,61 @@
         }
 
         async function startTransmission() {
-            const message = document.getElementById("message").value;
-            const syncHeader = "10101011"; // Same header as before
-            const binaryData = syncHeader + textToBinary(message);
-            const baudRate = 2; // 2 bits per second for camera sync
-            const delay = (1.0 / baudRate) * 1000; // in milliseconds
+            const btn = document.getElementById("sendBtn");
+            const statusLabel = document.getElementById("status");
+            btn.disabled = true;
 
-            document.getElementById("status").innerText = "Status: Initializing Camera...";
+            const message = document.getElementById("message").value;
+            const syncHeader = "10101011"; 
+            const binaryData = syncHeader + textToBinary(message);
+            
+            // PRO UPGRADE: Speed badha di gayi hai (8 bits per second). 
+            // Aap ise 10 ya 12 bhi kar sakte hain agar aapka phone fast hai.
+            const baudRate = 8; 
+            const delayMs = (1.0 / baudRate) * 1000; 
+
+            statusLabel.innerText = "Status: Initializing Camera...";
 
             try {
-                // Request back camera with torch support
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: "environment" }
                 });
                 track = stream.getVideoTracks()[0];
-                const capabilities = track.getCapabilities();
-
-                if (!capabilities.torch) {
-                    alert("Aapke device/browser mein flashlight control support nahi karta.");
+                
+                if (!track.getCapabilities().torch) {
+                    alert("Flashlight control not supported.");
                     return;
                 }
 
-                document.getElementById("status").innerText = `Sending: ${message} (Length: ${binaryData.length} bits)`;
-                
-                // 3 second wait
+                statusLabel.innerText = "Get Ready... Starting in 3 seconds!";
                 await new Promise(resolve => setTimeout(resolve, 3000));
+                statusLabel.innerText = `⚡ SENDING RAPID DATA... (${binaryData.length} bits)`;
 
+                // PRO UPGRADE: Precision Timing Loop
                 for (let i = 0; i < binaryData.length; i++) {
+                    const startTurn = performance.now(); // Start Stopwatch
                     const bit = binaryData[i];
-                    if (bit === '1') {
-                        await track.applyConstraints({ advanced: [{ torch: true }] });
-                    } else {
-                        await track.applyConstraints({ advanced: [{ torch: false }] });
-                    }
-                    await new Promise(resolve => setTimeout(resolve, delay));
+                    
+                    // Hardware command bhejna
+                    await track.applyConstraints({ advanced: [{ torch: bit === '1' }] });
+                    
+                    // Hardware command mein lagne wale time ko minus karna taaki sync na tute
+                    const timeTaken = performance.now() - startTurn;
+                    const waitTime = Math.max(0, delayMs - timeTaken);
+                    
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
                 }
 
-                // Turn off at the end
+                // Transmission End
                 await track.applyConstraints({ advanced: [{ torch: false }] });
-                document.getElementById("status").innerText = "Status: Transmission Complete!";
-                track.stop(); // Release camera
+                statusLabel.innerText = "✅ Transmission Complete!";
+                track.stop(); 
 
             } catch (error) {
                 console.error(error);
-                alert("Camera permission denied ya error aayi.");
+                statusLabel.innerText = "❌ Error: Camera Access Denied.";
+            } finally {
+                btn.disabled = false;
             }
         }
     </script>
