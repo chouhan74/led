@@ -3,89 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Li-Fi PRO Sender</title>
+    <title>Color Data Sender</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin-top: 50px; background-color: #111; color: #fff;}
-        button { padding: 15px 30px; font-size: 18px; margin-top: 20px; cursor: pointer; background: #00d2ff; color: #000; font-weight: bold; border: none; border-radius: 8px;}
-        button:active { background: #0096c7; }
-        input { padding: 12px; font-size: 16px; width: 80%; max-width: 300px; margin-top: 10px; border-radius: 5px; border: none;}
-        #status { margin-top: 30px; font-size: 1.2em; color: #00ff00; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: #111; color: white; text-align: center; }
+        #controlPanel { position: absolute; top: 20px; width: 100%; z-index: 10; }
+        input { padding: 10px; font-size: 16px; width: 60%; max-width: 300px; border-radius: 5px; border: none; }
+        button { padding: 10px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; background: #00d2ff; font-weight: bold; border: none; border-radius: 5px; }
+        #colorScreen { width: 100vw; height: 100vh; background-color: black; position: absolute; top: 0; left: 0; z-index: 1; }
+        #status { margin-top: 15px; font-size: 1.2em; font-weight: bold; text-shadow: 1px 1px 2px black;}
     </style>
 </head>
 <body>
-    <h2>⚡ PRO Mobile Li-Fi Sender</h2>
-    <p>Message type karein (Max speed transmission)</p>
-    <input type="text" id="message" value="HI" />
-    <br>
-    <button onclick="startTransmission()" id="sendBtn">Send via Flashlight ⚡</button>
-    <p id="status">Status: Standby</p>
+    <div id="colorScreen"></div>
+    
+    <div id="controlPanel">
+        <h2>🎨 Color Data Sender</h2>
+        <input type="text" id="message" value="HI" />
+        <br>
+        <button onclick="startTransmission()" id="sendBtn">Send via Screen</button>
+        <p id="status">Status: Standby</p>
+    </div>
 
     <script>
-        let track = null;
-
         function textToBinary(text) {
-            return text.split('').map(char => {
-                return char.charCodeAt(0).toString(2).padStart(8, '0');
-            }).join('');
+            return text.split('').map(char => char.charCodeAt(0).toString(2).padStart(8, '0')).join('');
         }
 
         async function startTransmission() {
             const btn = document.getElementById("sendBtn");
             const statusLabel = document.getElementById("status");
+            const colorScreen = document.getElementById("colorScreen");
             btn.disabled = true;
 
             const message = document.getElementById("message").value;
-            const syncHeader = "10101011"; 
-            const binaryData = syncHeader + textToBinary(message);
+            const binaryData = textToBinary(message);
             
-            // PRO UPGRADE: Speed badha di gayi hai (8 bits per second). 
-            // Aap ise 10 ya 12 bhi kar sakte hain agar aapka phone fast hai.
-            const baudRate = 8; 
-            const delayMs = (1.0 / baudRate) * 1000; 
+            // Speed: 2 symbols per second = 4 bits per second (Safe speed for testing)
+            const delayMs = 500; 
 
-            statusLabel.innerText = "Status: Initializing Camera...";
+            // Color Map: 00=Red, 01=Green, 10=Blue, 11=Yellow
+            const colors = {
+                '00': 'rgb(255, 0, 0)',
+                '01': 'rgb(0, 255, 0)',
+                '10': 'rgb(0, 0, 255)',
+                '11': 'rgb(255, 255, 0)'
+            };
 
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" }
-                });
-                track = stream.getVideoTracks()[0];
-                
-                if (!track.getCapabilities().torch) {
-                    alert("Flashlight control not supported.");
-                    return;
-                }
+            statusLabel.innerText = "Syncing... (Magenta)";
+            
+            // SYNC SIGNAL: Show Magenta for 3 seconds to lock receiver
+            colorScreen.style.backgroundColor = 'rgb(255, 0, 255)'; 
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
-                statusLabel.innerText = "Get Ready... Starting in 3 seconds!";
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                statusLabel.innerText = `⚡ SENDING RAPID DATA... (${binaryData.length} bits)`;
+            statusLabel.innerText = `TRANSMITTING DATA...`;
 
-                // PRO UPGRADE: Precision Timing Loop
-                for (let i = 0; i < binaryData.length; i++) {
-                    const startTurn = performance.now(); // Start Stopwatch
-                    const bit = binaryData[i];
-                    
-                    // Hardware command bhejna
-                    await track.applyConstraints({ advanced: [{ torch: bit === '1' }] });
-                    
-                    // Hardware command mein lagne wale time ko minus karna taaki sync na tute
-                    const timeTaken = performance.now() - startTurn;
-                    const waitTime = Math.max(0, delayMs - timeTaken);
-                    
-                    await new Promise(resolve => setTimeout(resolve, waitTime));
-                }
-
-                // Transmission End
-                await track.applyConstraints({ advanced: [{ torch: false }] });
-                statusLabel.innerText = "✅ Transmission Complete!";
-                track.stop(); 
-
-            } catch (error) {
-                console.error(error);
-                statusLabel.innerText = "❌ Error: Camera Access Denied.";
-            } finally {
-                btn.disabled = false;
+            // Data Transmission Loop (Reading 2 bits at a time)
+            for (let i = 0; i < binaryData.length; i += 2) {
+                const chunk = binaryData.substring(i, i + 2);
+                colorScreen.style.backgroundColor = colors[chunk];
+                await new Promise(resolve => setTimeout(resolve, delayMs));
             }
+
+            // End Transmission
+            colorScreen.style.backgroundColor = 'black';
+            statusLabel.innerText = "✅ Transmission Complete!";
+            btn.disabled = false;
         }
     </script>
 </body>
