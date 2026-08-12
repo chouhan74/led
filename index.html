@@ -3,104 +3,102 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PRO QR Streaming Sender</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <title>PRO QR Streaming Receiver</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #111; color: white; text-align: center; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: auto; background: #222; padding: 20px; border-radius: 10px; box-shadow: 0px 4px 15px rgba(0,255,255,0.2); }
-        input[type="text"], input[type="file"] { width: 90%; padding: 10px; margin: 10px 0; border-radius: 5px; border: none; }
-        button { padding: 12px 25px; font-size: 16px; cursor: pointer; background: #00d2ff; font-weight: bold; border: none; border-radius: 5px; color: black; }
-        #qr-container { display: flex; justify-content: center; margin-top: 20px; background: white; padding: 20px; border-radius: 10px; width: fit-content; margin-left: auto; margin-right: auto; }
-        #status { margin-top: 15px; color: #00ff00; font-size: 1.2em; }
+        .container { max-width: 500px; margin: auto; background: #222; padding: 20px; border-radius: 10px; }
+        #reader { width: 100%; margin: 20px auto; border: 4px solid #00d2ff; border-radius: 10px; background: black; }
+        #progress-container { width: 100%; background-color: #444; border-radius: 5px; margin-top: 20px; display: none; }
+        #progress-bar { width: 0%; height: 30px; background-color: #00ff00; border-radius: 5px; transition: width 0.1s; }
+        #status { font-size: 1.2em; font-weight: bold; margin-top: 15px; color: #00d2ff; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>⚡ PRO QR Stream Sender</h2>
-        <p>Text likhein ya koi choti file (Image/PDF) select karein.</p>
+        <h2>📷 PRO QR Receiver</h2>
+        <p>Laptop screen par chal rahe QR Stream ko scan karein.</p>
         
-        <input type="text" id="textInput" placeholder="Message type karein..." />
-        <br><b>YA</b><br>
-        <input type="file" id="fileInput" />
+        <div id="reader"></div>
         
-        <br><br>
-        <button onclick="startStreaming()">Start QR Stream ⚡</button>
-
-        <h3 id="status">Status: Standby</h3>
-        <h4 id="chunk-info"></h4>
+        <div id="progress-container">
+            <div id="progress-bar"></div>
+        </div>
         
-        <div id="qr-container"></div>
+        <p id="status">Scanner is Ready...</p>
     </div>
 
     <script>
-        let qrCode = new QRCode(document.getElementById("qr-container"), {
-            width: 300,
-            height: 300,
-            correctLevel: QRCode.CorrectLevel.L // Low error correction for maximum data capacity
-        });
+        let receivedChunks = {};
+        let totalExpectedChunks = 0;
+        let filename = "download.txt";
+        let isDownloading = false;
 
-        let streamingInterval;
-        const CHUNK_SIZE = 200; // Ek QR mein 200 characters
+        // QR Scanner Setup
+        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 30, qrbox: {width: 250, height: 250} }, /* verbose= */ false);
 
-        async function startStreaming() {
-            clearInterval(streamingInterval);
-            const fileInput = document.getElementById("fileInput");
-            const textInput = document.getElementById("textInput");
-            
-            let filename = "message.txt";
-            let fileData = "";
+        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
 
-            if (fileInput.files.length > 0) {
-                // Agar file select ki hai
-                const file = fileInput.files[0];
-                filename = file.name;
-                fileData = await readFileAsBase64(file);
-            } else if (textInput.value.trim() !== "") {
-                // Agar text likha hai
-                filename = "secret_message.txt";
-                // Text ko direct bhej sakte hain, par safety ke liye Data URL bana rahe hain
-                fileData = "data:text/plain;base64," + btoa(unescape(encodeURIComponent(textInput.value)));
-            } else {
-                alert("Please enter text or select a file!");
-                return;
-            }
+        function onScanSuccess(decodedText) {
+            if (isDownloading) return; // Download shuru ho gaya toh ignore karo
 
-            // Data ko Chunks mein todna
-            const chunks = [];
-            for (let i = 0; i < fileData.length; i += CHUNK_SIZE) {
-                chunks.push(fileData.substring(i, i + CHUNK_SIZE));
-            }
-
-            const totalChunks = chunks.length;
-            document.getElementById("status").innerText = `Total Chunks created: ${totalChunks}`;
-            
-            let currentIndex = 0;
-
-            // QR Streaming Loop (Carousel)
-            streamingInterval = setInterval(() => {
-                // Header Format: [Filename]|[Total_Chunks]|[Current_Index]|[Data]
-                const payload = `${filename}|${totalChunks}|${currentIndex}|${chunks[currentIndex]}`;
+            // Header Parse Karna -> filename|total|index|data
+            const parts = decodedText.split('|');
+            if (parts.length >= 4) {
+                const scannedFilename = parts[0];
+                const total = parseInt(parts[1]);
+                const index = parseInt(parts[2]);
                 
-                qrCode.clear();
-                qrCode.makeCode(payload);
-                
-                document.getElementById("chunk-info").innerText = `Flashing Chunk: ${currentIndex + 1} / ${totalChunks}`;
-                
-                currentIndex++;
-                if (currentIndex >= totalChunks) {
-                    currentIndex = 0; // Loop wapas zero se shuru (Receiver miss na kare isliye)
+                // Data part mein pipeline character ho sakta hai (Base64 padding), isliye baki hissa jodna hoga
+                const data = parts.slice(3).join('|'); 
+
+                if (totalExpectedChunks === 0) {
+                    totalExpectedChunks = total;
+                    filename = scannedFilename;
+                    document.getElementById("progress-container").style.display = "block";
                 }
-            }, 150); // Speed: 150ms per QR (approx 7 FPS)
+
+                // Agar chunk pehle se nahi mila hai, toh save karo
+                if (!receivedChunks[index]) {
+                    receivedChunks[index] = data;
+                    
+                    // Progress Update
+                    const receivedCount = Object.keys(receivedChunks).length;
+                    const progress = (receivedCount / totalExpectedChunks) * 100;
+                    document.getElementById("progress-bar").style.width = progress + "%";
+                    document.getElementById("status").innerText = `Received: ${receivedCount} / ${totalExpectedChunks} Chunks`;
+
+                    // Auto-Assembly aur Download check
+                    if (receivedCount === totalExpectedChunks) {
+                        isDownloading = true;
+                        document.getElementById("status").innerText = "✅ 100% Received! Assembling File...";
+                        html5QrcodeScanner.clear(); // Camera band karo
+                        assembleAndDownload();
+                    }
+                }
+            }
         }
 
-        // File ko Base64 (Data URL) mein badalne ka function
-        function readFileAsBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
-                reader.readAsDataURL(file);
-            });
+        function onScanFailure(error) {
+            // Background scanning errors ko ignore karna hai
+        }
+
+        // File ko wapas jodna aur download karna
+        function assembleAndDownload() {
+            let finalBase64DataURL = "";
+            for (let i = 0; i < totalExpectedChunks; i++) {
+                finalBase64DataURL += receivedChunks[i];
+            }
+
+            // Auto-Download Trigger
+            const link = document.createElement('a');
+            link.href = finalBase64DataURL;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            document.getElementById("status").innerText = `🎉 File Downloaded: ${filename}`;
         }
     </script>
 </body>
