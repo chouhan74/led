@@ -3,102 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PRO QR Streaming Receiver</title>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <title>MAX CAPACITY QR Sender</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #111; color: white; text-align: center; margin: 0; padding: 20px; }
-        .container { max-width: 500px; margin: auto; background: #222; padding: 20px; border-radius: 10px; }
-        #reader { width: 100%; margin: 20px auto; border: 4px solid #00d2ff; border-radius: 10px; background: black; }
-        #progress-container { width: 100%; background-color: #444; border-radius: 5px; margin-top: 20px; display: none; }
-        #progress-bar { width: 0%; height: 30px; background-color: #00ff00; border-radius: 5px; transition: width 0.1s; }
-        #status { font-size: 1.2em; font-weight: bold; margin-top: 15px; color: #00d2ff; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #000; color: white; text-align: center; margin: 0; padding: 20px; }
+        .container { max-width: 700px; margin: auto; background: #111; padding: 20px; border-radius: 10px; border: 2px solid #ff0055; box-shadow: 0px 0px 20px rgba(255,0,85,0.5); }
+        input[type="text"], input[type="file"] { width: 90%; padding: 12px; margin: 10px 0; border-radius: 5px; border: none; font-size: 16px;}
+        button { padding: 15px 30px; font-size: 18px; cursor: pointer; background: #ff0055; font-weight: bold; border: none; border-radius: 5px; color: white; text-transform: uppercase; }
+        #qr-container { display: flex; justify-content: center; margin-top: 20px; background: white; padding: 10px; border-radius: 10px; width: fit-content; margin-left: auto; margin-right: auto; }
+        #status { margin-top: 15px; color: #00ff00; font-size: 1.4em; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>📷 PRO QR Receiver</h2>
-        <p>Laptop screen par chal rahe QR Stream ko scan karein.</p>
+        <h2>🚀 FULL CAPACITY QR STREAM</h2>
         
-        <div id="reader"></div>
+        <input type="file" id="fileInput" />
+        <br><br>
+        <button onclick="startStreaming()">Start Turbo Stream 🚀</button>
+
+        <h3 id="status">Status: Standby</h3>
+        <h4 id="chunk-info"></h4>
         
-        <div id="progress-container">
-            <div id="progress-bar"></div>
-        </div>
-        
-        <p id="status">Scanner is Ready...</p>
+        <div id="qr-container"></div>
     </div>
 
     <script>
-        let receivedChunks = {};
-        let totalExpectedChunks = 0;
-        let filename = "download.txt";
-        let isDownloading = false;
+        let qrCode = new QRCode(document.getElementById("qr-container"), {
+            width: 500,  // Bada QR size for dense data
+            height: 500,
+            correctLevel: QRCode.CorrectLevel.L 
+        });
 
-        // QR Scanner Setup
-        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 30, qrbox: {width: 250, height: 250} }, /* verbose= */ false);
+        let streamingInterval;
+        
+        // 🔥 FULL CAPACITY SETTINGS 🔥
+        const CHUNK_SIZE = 800; // 4x zyada data per QR
+        const SPEED_MS = 60;    // ~16 FPS (Super Fast)
 
-        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+        async function startStreaming() {
+            clearInterval(streamingInterval);
+            const fileInput = document.getElementById("fileInput");
+            
+            if (fileInput.files.length === 0) {
+                alert("Please select a file!");
+                return;
+            }
 
-        function onScanSuccess(decodedText) {
-            if (isDownloading) return; // Download shuru ho gaya toh ignore karo
+            const file = fileInput.files[0];
+            const filename = file.name;
+            const fileData = await readFileAsBase64(file);
 
-            // Header Parse Karna -> filename|total|index|data
-            const parts = decodedText.split('|');
-            if (parts.length >= 4) {
-                const scannedFilename = parts[0];
-                const total = parseInt(parts[1]);
-                const index = parseInt(parts[2]);
+            const chunks = [];
+            for (let i = 0; i < fileData.length; i += CHUNK_SIZE) {
+                chunks.push(fileData.substring(i, i + CHUNK_SIZE));
+            }
+
+            const totalChunks = chunks.length;
+            document.getElementById("status").innerText = `Total Chunks: ${totalChunks} (Max Density)`;
+            
+            let currentIndex = 0;
+
+            streamingInterval = setInterval(() => {
+                const payload = `${filename}|${totalChunks}|${currentIndex}|${chunks[currentIndex]}`;
                 
-                // Data part mein pipeline character ho sakta hai (Base64 padding), isliye baki hissa jodna hoga
-                const data = parts.slice(3).join('|'); 
-
-                if (totalExpectedChunks === 0) {
-                    totalExpectedChunks = total;
-                    filename = scannedFilename;
-                    document.getElementById("progress-container").style.display = "block";
+                qrCode.clear();
+                qrCode.makeCode(payload);
+                
+                document.getElementById("chunk-info").innerText = `Flashing: ${currentIndex + 1} / ${totalChunks}`;
+                
+                currentIndex++;
+                if (currentIndex >= totalChunks) {
+                    currentIndex = 0; 
                 }
-
-                // Agar chunk pehle se nahi mila hai, toh save karo
-                if (!receivedChunks[index]) {
-                    receivedChunks[index] = data;
-                    
-                    // Progress Update
-                    const receivedCount = Object.keys(receivedChunks).length;
-                    const progress = (receivedCount / totalExpectedChunks) * 100;
-                    document.getElementById("progress-bar").style.width = progress + "%";
-                    document.getElementById("status").innerText = `Received: ${receivedCount} / ${totalExpectedChunks} Chunks`;
-
-                    // Auto-Assembly aur Download check
-                    if (receivedCount === totalExpectedChunks) {
-                        isDownloading = true;
-                        document.getElementById("status").innerText = "✅ 100% Received! Assembling File...";
-                        html5QrcodeScanner.clear(); // Camera band karo
-                        assembleAndDownload();
-                    }
-                }
-            }
+            }, SPEED_MS); 
         }
 
-        function onScanFailure(error) {
-            // Background scanning errors ko ignore karna hai
-        }
-
-        // File ko wapas jodna aur download karna
-        function assembleAndDownload() {
-            let finalBase64DataURL = "";
-            for (let i = 0; i < totalExpectedChunks; i++) {
-                finalBase64DataURL += receivedChunks[i];
-            }
-
-            // Auto-Download Trigger
-            const link = document.createElement('a');
-            link.href = finalBase64DataURL;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            document.getElementById("status").innerText = `🎉 File Downloaded: ${filename}`;
+        function readFileAsBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
         }
     </script>
 </body>
